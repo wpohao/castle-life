@@ -5,7 +5,8 @@ import type { Hud } from '../ui/hud';
 import type { Box } from './collision';
 import { FollowCamera } from './camera';
 import type { Input } from './input';
-import { createPlaceholderHumanoid, PlayerController } from './player';
+import { createPlaceholderHumanoid, PLAYER_RADIUS, PlayerController } from './player';
+import { canEnter, canMount, HORSE_RADIUS, HorseRider, moveSpeed } from './horse';
 import { TOWN_LAYOUT, townColliders, townZones } from './townLayout';
 import { buildBuilding, buildGround, buildProps, buildWalls } from './townBuilder';
 import { findInteraction, type Zone } from './zones';
@@ -52,6 +53,7 @@ export interface TownScene extends GameScene {
   ready: Promise<void>;
   /** 裝備畫面用：鏡頭轉到角色正前方 */
   previewMode: boolean;
+  rider: HorseRider;
 }
 
 function mulberry32(seed: number): () => number {
@@ -91,6 +93,17 @@ export function createTownScene(ctx: TownContext): TownScene {
 
   const follow = new FollowCamera();
   follow.yaw = 0;
+  const rider = new HorseRider(player.root, () => town.character?.root ?? null);
+
+  const toggleMount = () => {
+    if (rider.mounted) {
+      rider.dismount();
+      return;
+    }
+    const check = canMount(ctx.getState(), town.playerPosition(), zones);
+    if (check.ok) void rider.mount(check.horse);
+    else ctx.hud.toast(check.reason === 'no_horse' ? '你還沒有坐騎。到馬廄買馬，並在裝備畫面（I）設為坐騎。' : '這裡太擠了，走開一點再上馬。');
+  };
 
   const town: TownScene = {
     scene,
@@ -104,6 +117,7 @@ export function createTownScene(ctx: TownContext): TownScene {
     character: null,
     ready: Promise.resolve(),
     previewMode: false,
+    rider,
     refreshEquipment() {
       if (town.character) equipCharacter(town.character, ctx.getState().equippedWeapon);
     },
@@ -127,14 +141,32 @@ export function createTownScene(ctx: TownContext): TownScene {
         follow.snap();
         return;
       }
-      player.update(dt, ctx.input, follow, colliders, town.moveSpeedOverride !== null ? { speed: town.moveSpeedOverride } : {});
+      const state = ctx.getState();
+      // 坐騎被換掉或牽回馬廄時自動下馬
+      if (rider.mounted && rider.horseId !== state.activeHorse) rider.dismount();
+      if (ctx.input.consumePressed('KeyF')) toggleMount();
+
+      const running = ctx.input.isDown('ShiftLeft') || ctx.input.isDown('ShiftRight');
+      player.update(dt, ctx.input, follow, colliders, {
+        speed: town.moveSpeedOverride ?? moveSpeed(state, rider.mounted, running),
+        radius: rider.mounted ? HORSE_RADIUS : PLAYER_RADIUS,
+      });
+      follow.distance = rider.mounted ? 7 : 5;
+      follow.height = rider.mounted ? 2.2 : 1.6;
       follow.update(dt, player.position, ctx.input);
+
       const zone = findInteraction(town.playerPosition(), zones);
-      ctx.hud.setPrompt(zone ? `按 E ${zone.enterable ? '進入' : '前往'}${zone.label}` : null);
-      if (zone && ctx.input.consumePressed('KeyE')) ctx.onInteract(zone);
+      if (zone && !canEnter(zone, rider.mounted)) {
+        ctx.hud.setPrompt(`騎馬不能進入${zone.label}，請先下馬（F）`);
+        ctx.input.consumePressed('KeyE');
+      } else {
+        ctx.hud.setPrompt(zone ? `按 E ${zone.enterable ? '進入' : '前往'}${zone.label}` : null);
+        if (zone && ctx.input.consumePressed('KeyE')) ctx.onInteract(zone);
+      }
       if (town.character) {
-        town.character.loop(locomotionAnim(player.speedNow));
+        town.character.loop(rider.mounted ? 'Idle' : locomotionAnim(player.speedNow));
         town.character.update(dt);
+        rider.update(dt, player.speedNow, town.character.model);
       }
       for (const h of town.afterUpdate) h(dt);
     },

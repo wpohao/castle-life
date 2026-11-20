@@ -24,10 +24,14 @@ export class AnimatedCharacter {
     readonly placeholder: boolean,
   ) {
     this.mixer = new THREE.AnimationMixer(model);
+    // 同名動畫可能同時有 "Armature|Idle" 與 "Idle" 兩份；優先使用帶 Armature 前綴的版本
+    const chosen = new Map<string, THREE.AnimationClip>();
     for (const c of clips) {
       const short = c.name.split('|').pop()!;
-      if (!this.actions.has(short)) this.actions.set(short, this.mixer.clipAction(c));
+      const prev = chosen.get(short);
+      if (!prev || (!prev.name.includes('|') && c.name.includes('|'))) chosen.set(short, c);
     }
+    for (const [short, c] of chosen) this.actions.set(short, this.mixer.clipAction(c));
   }
 
   static async create(key: AssetKey): Promise<AnimatedCharacter> {

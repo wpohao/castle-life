@@ -16,8 +16,8 @@ export const ASSET_HEIGHT: Record<AssetKey, number> = {
   adventurerFemale: 1.72,
   lady: 1.68,
   king: 1.85,
-  horseBrown: 1.75,
-  horseWhite: 1.75,
+  horseBrown: 2.25,
+  horseWhite: 2.25,
 };
 
 export function assetUrl(key: AssetKey): string {
