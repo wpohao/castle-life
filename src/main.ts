@@ -32,8 +32,9 @@ import { LADY } from './config/romance';
 import { createGrass } from './world/grass';
 import { scatterGrass } from './world/grassScatter';
 import { grassExclusions, TOWN_LAYOUT } from './world/townLayout';
+import { loadQualityLevel, QUALITY, QUALITY_KEY, type QualityLevel } from './config/quality';
+import { applyEnvironment, loadSky } from './world/rendering';
 
-const GRASS_COUNT = 40000;
 
 function mulberry32(seed: number): () => number {
   let a = seed;
@@ -179,13 +180,14 @@ async function boot(): Promise<void> {
     input.setEnabled(true);
   };
 
-  const game = new Game(renderer);
+  let quality: QualityLevel = loadQualityLevel(localStorage);
+  const game = new Game(renderer, QUALITY[quality]);
   const town = createTownScene({ input, hud, getState: () => state, onInteract });
   game.registerScene('town', town);
   // Compute shader 草地（城牆內、避開道路與建築）
   const grassRng = mulberry32(2026);
   const H = TOWN_LAYOUT.halfSize - 1;
-  const grass = createGrass(renderer, scatterGrass({ minX: -H, maxX: H, minZ: -H, maxZ: H }, grassExclusions(), GRASS_COUNT, grassRng), grassRng);
+  const grass = createGrass(renderer, scatterGrass({ minX: -H, maxX: H, minZ: -H, maxZ: H }, grassExclusions(), QUALITY[quality].grassCount, grassRng), grassRng);
   town.scene.add(grass.mesh);
   let grassTime = 0;
   town.afterUpdate.push((dt) => {
@@ -199,7 +201,10 @@ async function boot(): Promise<void> {
   game.registerScene('manor', manor);
   const wedding = createWeddingScene(town.scene, hud, ui);
   game.registerScene('wedding', wedding);
-  await Promise.all([applySceneTextures(renderer.getMaxAnisotropy?.() ?? 8), town.ready]);
+  const [sky] = await Promise.all([loadSky(), applySceneTextures(renderer.getMaxAnisotropy?.() ?? 8), town.ready]);
+  applyEnvironment(town.scene, { hdri: sky, asBackground: true, environmentIntensity: 0.55, fog: { color: 0xc4d3df, near: 70, far: 260 } });
+  applyEnvironment(arena.scene, { hdri: sky, asBackground: true, environmentIntensity: 0.55, fog: { color: 0xc4d3df, near: 60, far: 200 } });
+  applyEnvironment(manor.scene, { hdri: sky, asBackground: false, environmentIntensity: 0.2 });
   game.switchScene('town');
   refreshHud();
   game.start();
@@ -227,6 +232,26 @@ async function boot(): Promise<void> {
           location.reload();
         },
         extraSections: [
+          (body) => {
+            const sel = h('select') as HTMLSelectElement;
+            for (const lv of ['high', 'medium', 'low'] as const) {
+              const o = h('option', { text: QUALITY[lv].label }) as HTMLOptionElement;
+              o.value = lv;
+              sel.append(o);
+            }
+            sel.value = quality;
+            sel.addEventListener('change', () => {
+              quality = sel.value as QualityLevel;
+              try {
+                localStorage.setItem(QUALITY_KEY, quality);
+              } catch {
+                /* 無法儲存就只套用本次 */
+              }
+              game.setQuality(QUALITY[quality]);
+              hud.toast('畫質已切換。草地數量會在重新整理後套用。');
+            });
+            body.append(h('h3', { text: '畫質' }), h('div', { className: 'row' }, sel));
+          },
           (body) => {
             const sel = h('select') as HTMLSelectElement;
             for (const [v, label] of [['standard', '標準（約 1 GB，反應快）'], ['smart', '聰明（約 2 GB，對話較自然，需要較好的顯示卡）']] as const) {

@@ -1,4 +1,6 @@
 import * as THREE from 'three/webgpu';
+import type { QualityPreset } from './config/quality';
+import { applyShadowQuality, createSceneOutput, type SceneOutput } from './world/rendering';
 
 export type SceneName = 'town' | 'arena' | 'manor' | 'wedding';
 
@@ -19,9 +21,13 @@ export class Game {
   private timer = new THREE.Timer();
   private paused = false;
   private frameHooks: ((dt: number) => void)[] = [];
+  private outputs = new Map<GameScene, SceneOutput>();
+  private throttleEvery = 1;
+  private frameCount = 0;
 
-  constructor(readonly renderer: THREE.WebGPURenderer) {
+  constructor(readonly renderer: THREE.WebGPURenderer, private preset: QualityPreset) {
     window.addEventListener('resize', () => this.resize());
+    this.applyPixelRatio();
     this.resize();
   }
 
@@ -35,8 +41,19 @@ export class Game {
     this.current?.exit();
     this.current = next;
     this.currentName = name;
+    applyShadowQuality(next.scene, this.preset);
     this.resize();
     next.enter();
+  }
+
+  /** 切換畫質：重建所有場景的輸出管線、更新像素比與陰影。 */
+  setQuality(preset: QualityPreset): void {
+    this.preset = preset;
+    for (const o of this.outputs.values()) o.dispose();
+    this.outputs.clear();
+    this.applyPixelRatio();
+    if (this.current) applyShadowQuality(this.current.scene, preset);
+    this.resize();
   }
 
   /** 每幀在場景 update 之前呼叫（UI、計時等）。 */
@@ -48,15 +65,13 @@ export class Game {
     this.paused = p;
   }
 
-  /** 節流時只每 N 幀畫一次（AI 生成時把顯示卡讓出來）。 */
-  private throttleEvery = 1;
-  private frameCount = 0;
-  setRenderThrottle(everyN: number): void {
-    this.throttleEvery = Math.max(1, Math.floor(everyN));
-  }
-
   get isPaused(): boolean {
     return this.paused;
+  }
+
+  /** 節流時只每 N 幀畫一次（AI 生成時把顯示卡讓出來）。 */
+  setRenderThrottle(everyN: number): void {
+    this.throttleEvery = Math.max(1, Math.floor(everyN));
   }
 
   start(): void {
@@ -68,8 +83,21 @@ export class Game {
       for (const h of this.frameHooks) h(dt);
       if (!this.paused) this.current.update(dt);
       this.frameCount++;
-      if (this.frameCount % this.throttleEvery === 0) this.renderer.render(this.current.scene, this.current.camera);
+      if (this.frameCount % this.throttleEvery === 0) this.outputFor(this.current).render();
     });
+  }
+
+  private outputFor(s: GameScene): SceneOutput {
+    let o = this.outputs.get(s);
+    if (!o) {
+      o = createSceneOutput(this.renderer, s.scene, s.camera, this.preset);
+      this.outputs.set(s, o);
+    }
+    return o;
+  }
+
+  private applyPixelRatio(): void {
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.preset.pixelRatioCap));
   }
 
   private resize(): void {
