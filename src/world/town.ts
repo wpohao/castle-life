@@ -50,6 +50,8 @@ export interface TownScene extends GameScene {
   refreshEquipment(): void;
   /** 等待角色模型載入完成 */
   ready: Promise<void>;
+  /** 裝備畫面用：鏡頭轉到角色正前方 */
+  previewMode: boolean;
 }
 
 function mulberry32(seed: number): () => number {
@@ -101,6 +103,7 @@ export function createTownScene(ctx: TownContext): TownScene {
     afterUpdate: [],
     character: null,
     ready: Promise.resolve(),
+    previewMode: false,
     refreshEquipment() {
       if (town.character) equipCharacter(town.character, ctx.getState().equippedWeapon);
     },
@@ -112,6 +115,18 @@ export function createTownScene(ctx: TownContext): TownScene {
       ctx.hud.setPrompt(null);
     },
     update(dt) {
+      if (town.previewMode) {
+        // 角色正前方偏左一點，讓右側面板不擋住角色
+        const f = player.facing;
+        const p = player.position;
+        follow.camera.position.set(p.x + Math.sin(f) * 3.2 + Math.cos(f) * 1.1, 1.5, p.z + Math.cos(f) * 3.2 - Math.sin(f) * 1.1);
+        follow.camera.lookAt(p.x + Math.cos(f) * 0.9, 1.1, p.z - Math.sin(f) * 0.9);
+        ctx.hud.setPrompt(null);
+        town.character?.loop('Idle');
+        town.character?.update(dt);
+        follow.snap();
+        return;
+      }
       player.update(dt, ctx.input, follow, colliders, town.moveSpeedOverride !== null ? { speed: town.moveSpeedOverride } : {});
       follow.update(dt, player.position, ctx.input);
       const zone = findInteraction(town.playerPosition(), zones);

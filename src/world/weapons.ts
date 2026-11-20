@@ -2,8 +2,32 @@ import * as THREE from 'three/webgpu';
 import type { Weapon } from '../config/items';
 import { mat } from './materials';
 
-/** 程式產生的武器模型：握把在原點，武器沿 +y 延伸。 */
+/**
+ * 掛到 Quaternius 骨架 Wrist.R 時的握持旋轉（弧度）。手腕骨的 +y 朝手指方向往下，
+ * 長柄武器翻轉成槍頭朝上；劍類維持朝下（自然垂放），揮砍動畫時再看手感調整。
+ */
+export const GRIP_ROTATION: Record<Weapon['kind'], [number, number, number]> = {
+  sword: [0, 0, 0],
+  axe: [0, 0, 0],
+  mace: [0, 0, 0],
+  spear: [Math.PI, 0, 0],
+};
+
+/** 長柄武器握在槍桿中段，其餘握在握把（原點）。 */
+const GRIP_OFFSET: Record<Weapon['kind'], number> = { sword: 0, axe: 0.1, mace: 0.05, spear: 0.55 };
+
+/** 程式產生的武器模型：握把在原點，武器沿 +y 延伸；外層套握持旋轉。 */
 export function buildWeaponModel(w: Weapon): THREE.Group {
+  const outer = new THREE.Group();
+  outer.name = `weapon:${w.id}`;
+  const inner = buildWeaponMesh(w);
+  inner.position.y = -GRIP_OFFSET[w.kind];
+  outer.add(inner);
+  outer.rotation.set(...GRIP_ROTATION[w.kind]);
+  return outer;
+}
+
+function buildWeaponMesh(w: Weapon): THREE.Group {
   const g = new THREE.Group();
   g.name = `weapon:${w.id}`;
   const steel = w.id === 'rusty_sword' ? rusty() : w.id === 'knight_sword' ? polished() : mat('iron');

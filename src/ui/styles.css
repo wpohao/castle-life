@@ -31,3 +31,7 @@ input[type=text], select { font: inherit; color: var(--ink); background: #1d1710
 .fullscreen-msg { pointer-events: auto; position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #15100b; }
 .fullscreen-msg .box { max-width: 560px; padding: 28px; border: 2px solid var(--border); border-radius: 12px; background: var(--panel); line-height: 1.7; }
 .fullscreen-msg h1 { margin-top: 0; color: var(--accent); font-size: 22px; }
+.panel.panel-right { left: auto; right: 24px; transform: translate(0, -50%); min-width: 420px; max-width: 46vw; }
+.panel h3 { margin: 14px 0 6px; color: var(--accent); font-size: 15px; border-bottom: 1px solid rgba(168,132,79,.4); padding-bottom: 3px; }
+.panel p { margin: 6px 0; line-height: 1.6; }
+.panel .row > span:first-child { min-width: 9em; }
