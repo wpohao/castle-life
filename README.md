@@ -3,6 +3,12 @@
 在瀏覽器裡用 **WebGPU** 跑的 3D 中世紀城鎮生活遊戲：逛市集買武器買馬、騎馬逛城、上競技場比試，
 再到城主府和艾琳娜聊天培養感情——她由**在你電腦上執行的 AI 模型**扮演，可以自由打字聊天——最後求婚、結婚。
 
+## 線上遊玩
+
+👉 https://wpohao.github.io/castle-life/ （用支援 WebGPU 的 Chrome 開啟）
+
+推送到 `main` 後，GitHub Actions（`.github/workflows/deploy-pages.yml`）會自動測試、打包並發布到 GitHub Pages。
+
 ## 需求
 
 - Windows／macOS／Linux 上的 **Chrome 113 以上**（或新版 Edge），且顯示卡支援 WebGPU（網址列輸入 `chrome://gpu` 確認）。
