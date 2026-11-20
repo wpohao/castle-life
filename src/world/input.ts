@@ -45,8 +45,8 @@ export function createInput(canvas: HTMLCanvasElement): Input {
   const onMouseDown = (e: MouseEvent) => {
     if (!enabled) return;
     if (document.pointerLockElement !== canvas) {
-      canvas.requestPointerLock()?.catch?.(() => {});
-      return;
+      const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+      p?.catch?.(() => {});
     }
     if (e.button === 0) {
       left = true;

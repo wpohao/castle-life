@@ -18,6 +18,11 @@ import { openInventory } from './ui/inventory';
 import { openSettings } from './ui/settings';
 import { openNameEntry } from './ui/nameEntry';
 import type { Zone } from './world/zones';
+import { createArenaScene } from './world/arenaScene';
+import { townZones } from './world/townLayout';
+import { getWeapon } from './config/items';
+import { currentOpponentIndex, recordBout } from './core/arenaProgress';
+import { openArenaGate } from './ui/arenaGate';
 
 async function boot(): Promise<void> {
   const ui = document.getElementById('ui')!;
@@ -69,13 +74,39 @@ async function boot(): Promise<void> {
       case 'stable': return openShop(uiCtx, 'horse');
       case 'gift_stall': return openShop(uiCtx, 'gift');
       case 'inn': return openInn(uiCtx);
+      case 'arena': return openArenaGate(uiCtx, () => void enterArena());
       default: return hud.toast(`（${zone.label}：之後的步驟會開啟這裡）`);
     }
+  };
+
+  const enterArena = async () => {
+    const weapon = getWeapon(state.equippedWeapon)!;
+    const idx = currentOpponentIndex(state);
+    input.setEnabled(false);
+    await arena.start({
+      playerName: state.playerName,
+      playerWeapon: weapon,
+      opponentIndex: idx,
+      onFinish: (result) => {
+        const r = recordBout(state, result);
+        uiCtx.setState(r.state);
+        game.switchScene('town');
+        const door = townZones().find((z) => z.id === 'arena')!;
+        town.player.teleport(door.x - 1.5, door.z, -Math.PI / 2);
+        if (result === 'win') {
+          hud.toast(r.state.arena.champion && r.affectionBonus > 0 ? `你成為競技場冠軍！獲得 ${r.prize} 金幣，全城都在談論你。` : `勝利！獲得 ${r.prize} 金幣。`);
+        } else hud.toast('這次輸了。休息一下再來挑戰吧。');
+      },
+    });
+    game.switchScene('arena');
+    input.setEnabled(true);
   };
 
   const game = new Game(renderer);
   const town = createTownScene({ input, hud, getState: () => state, onInteract });
   game.registerScene('town', town);
+  const arena = createArenaScene({ input, hud, ui });
+  game.registerScene('arena', arena);
   await Promise.all([applySceneTextures(renderer.getMaxAnisotropy?.() ?? 8), town.ready]);
   game.switchScene('town');
   refreshHud();
@@ -83,7 +114,7 @@ async function boot(): Promise<void> {
 
   // 全域快捷鍵（面板關閉時才作用；input 在面板開啟時會停用）
   game.onFrame(() => {
-    if (panels.isOpen()) return;
+    if (panels.isOpen() || game.currentName !== 'town') return;
     if (input.consumePressed('KeyI') || input.consumePressed('Tab')) {
       openInventory(uiCtx, (on) => (town.previewMode = on));
     }
