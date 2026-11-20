@@ -48,6 +48,13 @@ export class Game {
     this.paused = p;
   }
 
+  /** 節流時只每 N 幀畫一次（AI 生成時把顯示卡讓出來）。 */
+  private throttleEvery = 1;
+  private frameCount = 0;
+  setRenderThrottle(everyN: number): void {
+    this.throttleEvery = Math.max(1, Math.floor(everyN));
+  }
+
   get isPaused(): boolean {
     return this.paused;
   }
@@ -60,7 +67,8 @@ export class Game {
       if (!this.current) return;
       for (const h of this.frameHooks) h(dt);
       if (!this.paused) this.current.update(dt);
-      this.renderer.render(this.current.scene, this.current.camera);
+      this.frameCount++;
+      if (this.frameCount % this.throttleEvery === 0) this.renderer.render(this.current.scene, this.current.camera);
     });
   }
 

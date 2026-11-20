@@ -23,6 +23,10 @@ import { townZones } from './world/townLayout';
 import { getWeapon } from './config/items';
 import { currentOpponentIndex, recordBout } from './core/arenaProgress';
 import { openArenaGate } from './ui/arenaGate';
+import { createManorScene } from './world/manorScene';
+import { LlmClient, pickModel, webWorkerEngineFactory, type ModelTier } from './romance/llmClient';
+import { openChat } from './ui/chat';
+import { h } from './ui/dom';
 
 async function boot(): Promise<void> {
   const ui = document.getElementById('ui')!;
@@ -63,7 +67,10 @@ async function boot(): Promise<void> {
       state = s;
       refreshHud();
       autosave.notify(state);
-      if (weaponChanged) town.refreshEquipment();
+      if (weaponChanged) {
+        town.refreshEquipment();
+        manor.refreshEquipment();
+      }
     },
     toast: (t) => hud.toast(t),
   };
@@ -75,8 +82,50 @@ async function boot(): Promise<void> {
       case 'gift_stall': return openShop(uiCtx, 'gift');
       case 'inn': return openInn(uiCtx);
       case 'arena': return openArenaGate(uiCtx, () => void enterArena());
-      default: return hud.toast(`（${zone.label}：之後的步驟會開啟這裡）`);
+      case 'manor': return void enterManor();
     }
+  };
+
+  // ── 對話模型（背景載入，下載期間其他玩法照常） ──
+  const features = new Set<string>(check.adapter.features as unknown as Iterable<string>);
+  const tierKey = 'castle-life/model-tier';
+  const llm = new LlmClient(webWorkerEngineFactory);
+  const loadModel = () => void llm.load(pickModel(features, (localStorage.getItem(tierKey) as ModelTier) || 'standard'));
+  llm.onStatus((s) => {
+    // AI 生成時畫面降到約 6 fps，把顯示卡讓給模型
+    game.setRenderThrottle(s.kind === 'generating' ? 10 : 1);
+    if (s.kind === 'loading') hud.setStatus(s.text === '暖機中' ? '｜對話模型暖機中' : `｜對話模型 ${Math.round(s.progress * 100)}%`);
+    else if (s.kind === 'error') hud.setStatus('｜對話模型載入失敗');
+    else hud.setStatus(null);
+  });
+
+  const enterManor = async () => {
+    input.setEnabled(false);
+    await manor.ready;
+    game.switchScene('manor');
+    input.setEnabled(true);
+  };
+
+  const leaveManor = () => {
+    game.switchScene('town');
+    const door = townZones().find((z) => z.id === 'manor')!;
+    town.player.teleport(door.x, door.z + 1.5, 0);
+    town.follow.yaw = 0;
+  };
+
+  const talkToLady = () => {
+    manor.chatMode = true;
+    openChat(uiCtx, {
+      llm,
+      retryLoad: loadModel,
+      onLadySpeak: (k) => manor.ladyReact(k),
+      onProposalAccepted: () => onProposalAccepted(),
+      onClose: () => (manor.chatMode = false),
+    });
+  };
+
+  const onProposalAccepted = () => {
+    hud.toast('她答應了！');
   };
 
   const enterArena = async () => {
@@ -107,10 +156,13 @@ async function boot(): Promise<void> {
   game.registerScene('town', town);
   const arena = createArenaScene({ input, hud, ui });
   game.registerScene('arena', arena);
+  const manor = createManorScene({ input, hud, getState: () => state, onTalk: talkToLady, onLeave: leaveManor });
+  game.registerScene('manor', manor);
   await Promise.all([applySceneTextures(renderer.getMaxAnisotropy?.() ?? 8), town.ready]);
   game.switchScene('town');
   refreshHud();
   game.start();
+  loadModel();
 
   // 全域快捷鍵（面板關閉時才作用；input 在面板開啟時會停用）
   game.onFrame(() => {
@@ -133,6 +185,23 @@ async function boot(): Promise<void> {
           await deleteSave();
           location.reload();
         },
+        extraSections: [
+          (body) => {
+            const sel = h('select') as HTMLSelectElement;
+            for (const [v, label] of [['standard', '標準（約 1 GB，反應快）'], ['smart', '聰明（約 2 GB，對話較自然，需要較好的顯示卡）']] as const) {
+              const o = h('option', { text: label }) as HTMLOptionElement;
+              o.value = v;
+              sel.append(o);
+            }
+            sel.value = localStorage.getItem(tierKey) || 'standard';
+            sel.addEventListener('change', () => {
+              localStorage.setItem(tierKey, sel.value);
+              hud.toast('已切換對話模型，重新載入中……');
+              loadModel();
+            });
+            body.append(h('h3', { text: '對話模型' }), h('div', { className: 'row' }, sel));
+          },
+        ],
       });
     }
   });
@@ -153,7 +222,7 @@ async function boot(): Promise<void> {
   }
 
   if (import.meta.env.DEV) {
-    (window as unknown as { __game: unknown }).__game = { game, town, input, ui: uiCtx, autosave };
+    (window as unknown as { __game: unknown }).__game = { game, town, arena, manor, llm, input, ui: uiCtx, autosave };
   }
 }
 
