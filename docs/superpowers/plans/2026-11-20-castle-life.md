@@ -22,6 +22,7 @@
 - 本機 Node 指令需 `NODE_OPTIONS=--use-system-ca`（Avast 攔截 HTTPS）；curl 需 `--ssl-no-revoke`。
 - Commit 訊息格式：`<type>(<scope>): <正體中文 subject>`，結尾附 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`。
 - 所有數值（價格、傷害、門檻）集中在 `src/config/`，方便調整平衡。
+- 美術方向（spec §6.1 修訂）：**寫實場景＋風格化角色**。場景材質用 Poly Haven CC0 PBR 貼圖（2K 為上限）、天空用 Poly Haven CC0 HDRI；陰影、霧、AO、bloom、ACES；畫質分高／中／低。
 
 ## Review Focus
 
@@ -366,7 +367,8 @@ export function attachWeapon(character: THREE.Object3D, weapon: THREE.Object3D):
 export function findHandBone(root: THREE.Object3D): THREE.Object3D | null; // 名稱比對 /hand.?slot.?r|hand.?r|righthand/i
 type AssetKey = keyof typeof ASSETS;
 ```
-素材候選（全部 CC0，下載前到原始頁面再確認授權並記入 `CREDITS.md`）：KayKit Adventurers（主角、她、競技場對手；含 `handslot.r` 骨骼與動畫）、KayKit 或 Quaternius 中世紀武器、Quaternius Animated Animal Pack（馬：Idle/Walk/Gallop）、Kenney Castle Kit／Quaternius Medieval Village（城牆、建築、攤位）。若無法以指令下載（需要瀏覽器點擊），回報給使用者並列出要下載的包與放置路徑；在此之前遊戲持續以佔位模型運作。
+場景材質與天空（寫實方向）：以 Poly Haven API（`https://api.polyhaven.com/files/<id>`，curl 加 `--ssl-no-revoke`）下載 1K～2K 的 PBR 貼圖（diffuse/normal/roughness/AO，jpg）放 `public/assets/textures/<id>/`，與一張 2K HDRI（`.hdr`）放 `public/assets/hdri/`；城牆、建築牆面、屋瓦、石板路、泥土地、木板各一套。建築幾何可自行以盒子＋屋頂組合後套 PBR 材質（triplanar 或依尺寸設 UV 重複），不強求現成建築模型。
+人物、馬、武器、道具素材候選（全部 CC0，下載前到原始頁面再確認授權並記入 `CREDITS.md`）：KayKit Adventurers（主角、她、競技場對手；含 `handslot.r` 骨骼與動畫）、KayKit 或 Quaternius 中世紀武器、Quaternius Animated Animal Pack（馬：Idle/Walk/Gallop）、Kenney Castle Kit／Quaternius Medieval Village（城牆、建築、攤位）。若無法以指令下載（需要瀏覽器點擊），回報給使用者並列出要下載的包與放置路徑；在此之前遊戲持續以佔位模型運作。
 
 - [ ] **Step 1: 寫失敗測試**
 
@@ -790,7 +792,49 @@ test('草不會長在建築裡、數量正確、可重現', () => {
 
 ---
 
-### Task 14: 整體驗收
+### Task 14: 寫實渲染與畫質設定
+
+**Files:**
+- Create: `src/world/rendering.ts`、`src/config/quality.ts`
+- Modify: `src/main.ts`（以 `RenderPipeline`／`PostProcessing` 取代直接 render）、`src/game.ts`、`src/world/town.ts`、`src/world/arenaScene.ts`、`src/world/manorScene.ts`（共用環境設定）、`src/ui/settings.ts`（畫質選單，存在 localStorage `castle-life/quality`，不進遊戲存檔）
+- Test: `tests/config/quality.test.ts`
+
+**Interfaces:**
+- Produces:
+```ts
+type QualityLevel = 'high' | 'medium' | 'low';
+interface QualityPreset { pixelRatioCap: number; shadowMapSize: number; ao: boolean; bloom: boolean; grassCount: number; textureMaxSize: 1024 | 2048 }
+export const QUALITY: Record<QualityLevel, QualityPreset>;
+// high: 2, 2048, true, true, 50000, 2048；medium: 1.5, 1024, true, false, 25000, 2048；low: 1, 512, false, false, 8000, 1024
+export function loadQualityLevel(storage: Pick<Storage, 'getItem'>): QualityLevel; // 無值或非法值 → 'medium'
+export function applyEnvironment(scene: THREE.Scene, opts: { hdri: THREE.Texture; fogColor: number; fogNear: number; fogFar: number }): void;
+export function createSun(preset: QualityPreset): THREE.DirectionalLight; // castShadow，陰影相機跟隨玩家
+export function createPostProcessing(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, preset: QualityPreset): { render(): void; setSize(w: number, h: number): void };
+```
+`Game` 改為每個場景透過 `createPostProcessing` 輸出（ACES 色調映射＋視 preset 開 AO〔TSL `ao`〕與 bloom〔TSL `bloom`〕）。Task 13 的草量改讀 `QualityPreset.grassCount`。
+
+- [ ] **Step 1: 寫失敗測試**
+
+```ts
+test('畫質預設值', () => {
+  expect(loadQualityLevel({ getItem: () => null })).toBe('medium');
+  expect(loadQualityLevel({ getItem: () => 'ultra' })).toBe('medium');
+  expect(loadQualityLevel({ getItem: () => 'low' })).toBe('low');
+});
+test('高畫質比低畫質陰影解析度高、草多', () => {
+  expect(QUALITY.high.shadowMapSize).toBeGreaterThan(QUALITY.low.shadowMapSize);
+  expect(QUALITY.high.grassCount).toBeGreaterThan(QUALITY.low.grassCount);
+  expect(QUALITY.low.ao).toBe(false);
+});
+```
+
+- [ ] **Step 2: FAIL → Step 3: 實作 → Step 4: PASS**
+- [ ] **Step 5: 瀏覽器中三種畫質各截一張圖比對，確認 HDRI 天空、陰影、霧、AO 生效、主控台無錯誤；記錄三種畫質的 FPS**
+- [ ] **Step 6: Commit** `feat(畫面): 新增寫實光影後製與畫質設定`
+
+---
+
+### Task 15: 整體驗收
 
 **Files:**
 - Modify: 依驗收發現的問題修正
