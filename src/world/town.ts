@@ -9,6 +9,23 @@ import { createPlaceholderHumanoid, PlayerController } from './player';
 import { TOWN_LAYOUT, townColliders, townZones } from './townLayout';
 import { buildBuilding, buildGround, buildProps, buildWalls } from './townBuilder';
 import { findInteraction, type Zone } from './zones';
+import { AnimatedCharacter } from './character';
+import { attachWeapon } from './assets';
+import { buildWeaponModel } from './weapons';
+import { getWeapon } from '../config/items';
+
+/** 依移動速度選擇行走動畫。 */
+export function locomotionAnim(speed: number): 'Idle' | 'Walk' | 'Run' {
+  if (speed < 0.2) return 'Idle';
+  if (speed < 4.2) return 'Walk';
+  return 'Run';
+}
+
+/** 把目前裝備的武器掛到角色手上。 */
+export function equipCharacter(ch: AnimatedCharacter, weaponId: string): void {
+  const w = getWeapon(weaponId);
+  if (w) attachWeapon(ch.model, buildWeaponModel(w));
+}
 
 export interface TownContext {
   input: Input;
@@ -27,6 +44,12 @@ export interface TownScene extends GameScene {
   moveSpeedOverride: number | null;
   /** 每幀 update 後的掛鉤（動畫、草地等） */
   afterUpdate: ((dt: number) => void)[];
+  /** 正式角色模型（載入完成前為 null） */
+  character: AnimatedCharacter | null;
+  /** 裝備變更後呼叫，更新手上武器 */
+  refreshEquipment(): void;
+  /** 等待角色模型載入完成 */
+  ready: Promise<void>;
 }
 
 function mulberry32(seed: number): () => number {
@@ -76,6 +99,11 @@ export function createTownScene(ctx: TownContext): TownScene {
     follow,
     moveSpeedOverride: null,
     afterUpdate: [],
+    character: null,
+    ready: Promise.resolve(),
+    refreshEquipment() {
+      if (town.character) equipCharacter(town.character, ctx.getState().equippedWeapon);
+    },
     playerPosition: () => ({ x: player.position.x, z: player.position.z }),
     enter() {
       follow.snap();
@@ -89,8 +117,18 @@ export function createTownScene(ctx: TownContext): TownScene {
       const zone = findInteraction(town.playerPosition(), zones);
       ctx.hud.setPrompt(zone ? `按 E ${zone.enterable ? '進入' : '前往'}${zone.label}` : null);
       if (zone && ctx.input.consumePressed('KeyE')) ctx.onInteract(zone);
+      if (town.character) {
+        town.character.loop(locomotionAnim(player.speedNow));
+        town.character.update(dt);
+      }
       for (const h of town.afterUpdate) h(dt);
     },
   };
+  town.ready = AnimatedCharacter.create('player').then((ch) => {
+    player.root.clear();
+    player.root.add(ch.root);
+    town.character = ch;
+    town.refreshEquipment();
+  });
   return town;
 }

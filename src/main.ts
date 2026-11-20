@@ -7,6 +7,7 @@ import { Game } from './game';
 import { createInput } from './world/input';
 import { createTownScene } from './world/town';
 import { createNewState, type GameState } from './core/state';
+import { applySceneTextures } from './world/textures';
 
 async function boot(): Promise<void> {
   const ui = document.getElementById('ui')!;
@@ -39,6 +40,7 @@ async function boot(): Promise<void> {
     onInteract: (zone) => hud.toast(`（${zone.label}：之後的步驟會開啟這裡）`),
   });
   game.registerScene('town', town);
+  await Promise.all([applySceneTextures(renderer.getMaxAnisotropy?.() ?? 8), town.ready]);
   game.switchScene('town');
   game.start();
 
