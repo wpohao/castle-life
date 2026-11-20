@@ -183,6 +183,7 @@ async function boot(): Promise<void> {
   let quality: QualityLevel = loadQualityLevel(localStorage);
   const game = new Game(renderer, QUALITY[quality]);
   const town = createTownScene({ input, hud, getState: () => state, onInteract });
+  game.onSceneSwitch(() => input.clearPressed());
   game.registerScene('town', town);
   // Compute shader 草地（城牆內、避開道路與建築）
   const grassRng = mulberry32(2026);

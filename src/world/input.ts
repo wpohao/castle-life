@@ -10,12 +10,41 @@ export interface Input {
   readonly locked: boolean;
   /** false 時（例如面板開啟）忽略所有遊戲輸入並釋放滑鼠鎖定。 */
   setEnabled(v: boolean): void;
+  /** 丟掉尚未處理的按鍵與點擊（切換場景時呼叫，避免上一個場景的按鍵在新場景觸發）。 */
+  clearPressed(): void;
   dispose(): void;
 }
 
+/** 鍵盤狀態：按住中的鍵，以及「按下過、還沒被處理」的鍵。 */
+export class KeyState {
+  private down = new Set<string>();
+  private pressed = new Set<string>();
+  keyDown(code: string): void {
+    if (!this.down.has(code)) this.pressed.add(code);
+    this.down.add(code);
+  }
+  keyUp(code: string): void {
+    this.down.delete(code);
+  }
+  isDown(code: string): boolean {
+    return this.down.has(code);
+  }
+  consumePressed(code: string): boolean {
+    const had = this.pressed.has(code);
+    this.pressed.delete(code);
+    return had;
+  }
+  clearPressed(): void {
+    this.pressed.clear();
+  }
+  clear(): void {
+    this.down.clear();
+    this.pressed.clear();
+  }
+}
+
 export function createInput(canvas: HTMLCanvasElement): Input {
-  const down = new Set<string>();
-  const pressed = new Set<string>();
+  const keys = new KeyState();
   let dx = 0;
   let dy = 0;
   let left = false;
@@ -31,11 +60,10 @@ export function createInput(canvas: HTMLCanvasElement): Input {
   const onKeyDown = (e: KeyboardEvent) => {
     if (isTyping(e)) return;
     if (e.code === 'Tab') e.preventDefault();
-    if (!down.has(e.code)) pressed.add(e.code);
-    down.add(e.code);
+    keys.keyDown(e.code);
   };
   const onKeyUp = (e: KeyboardEvent) => {
-    down.delete(e.code);
+    keys.keyUp(e.code);
   };
   const onMouseMove = (e: MouseEvent) => {
     if (!enabled || document.pointerLockElement !== canvas) return;
@@ -60,7 +88,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
   };
   const onContext = (e: Event) => e.preventDefault();
   const onBlur = () => {
-    down.clear();
+    keys.clear();
     left = right = false;
   };
 
@@ -73,11 +101,11 @@ export function createInput(canvas: HTMLCanvasElement): Input {
   window.addEventListener('blur', onBlur);
 
   return {
-    isDown: (c) => enabled && down.has(c),
-    consumePressed: (c) => {
-      const had = pressed.has(c);
-      pressed.delete(c);
-      return enabled && had;
+    isDown: (c) => enabled && keys.isDown(c),
+    consumePressed: (c) => keys.consumePressed(c) && enabled,
+    clearPressed() {
+      keys.clearPressed();
+      clicked = false;
     },
     mouseDelta: () => {
       const d = { x: dx, y: dy };
@@ -95,8 +123,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
     },
     setEnabled(v) {
       enabled = v;
-      pressed.clear();
-      down.clear();
+      keys.clear();
       left = right = clicked = false;
       dx = dy = 0;
       if (!v && document.pointerLockElement === canvas) document.exitPointerLock();

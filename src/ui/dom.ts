@@ -18,25 +18,35 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   return el;
 }
 
+/** Esc 關面板；輸入法選字中（isComposing）的 Esc 是取消選字，不關面板。 */
+export function isPanelCloseKey(e: { code: string; isComposing: boolean }): boolean {
+  return e.code === 'Escape' && !e.isComposing;
+}
+
 export interface PanelHost {
   /** 開啟面板（會先關掉目前的面板）。回傳關閉函式。 */
-  open(title: string, render: (body: HTMLElement, close: () => void) => void, opts?: { className?: string; onClose?: () => void }): () => void;
+  open(
+    title: string,
+    render: (body: HTMLElement, close: () => void) => void,
+    opts?: { className?: string; onClose?: () => void; canClose?: () => boolean },
+  ): () => void;
   isOpen(): boolean;
   close(): void;
 }
 
 export function createPanelHost(root: HTMLElement, onOpenChange: (open: boolean) => void): PanelHost {
-  let current: { el: HTMLElement; onClose?: () => void } | null = null;
+  let current: { el: HTMLElement; onClose?: () => void; canClose?: () => boolean } | null = null;
   const onKey = (e: KeyboardEvent) => {
-    if (e.code === 'Escape' && current) {
+    if (current && isPanelCloseKey(e)) {
       e.stopPropagation();
       close();
     }
   };
   window.addEventListener('keydown', onKey, true);
 
-  function close(): void {
+  function close(force = false): void {
     if (!current) return;
+    if (!force && current.canClose && !current.canClose()) return;
     const c = current;
     current = null;
     c.el.remove();
@@ -46,18 +56,18 @@ export function createPanelHost(root: HTMLElement, onOpenChange: (open: boolean)
 
   return {
     open(title, render, opts = {}) {
-      close();
+      close(true);
       const el = h('div', { className: `panel ${opts.className ?? ''}` });
       el.append(h('button', { className: 'close', text: '✕', onClick: () => close() }), h('h2', { text: title }));
       const body = h('div');
       el.append(body);
       root.append(el);
-      current = { el, onClose: opts.onClose };
+      current = { el, onClose: opts.onClose, canClose: opts.canClose };
       onOpenChange(true);
-      render(body, close);
+      render(body, () => close(true));
       return close;
     },
     isOpen: () => current !== null,
-    close,
+    close: () => close(),
   };
 }

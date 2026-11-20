@@ -9,6 +9,8 @@ export type LlmStatus =
 
 export interface Engine {
   chat(messages: ChatMessage[]): Promise<string>;
+  /** 釋放模型與 worker（交還顯示卡記憶體） */
+  dispose?(): Promise<void>;
 }
 
 export type EngineFactory = (modelId: string, onProgress: (p: number, text: string) => void) => Promise<Engine>;
@@ -48,12 +50,45 @@ export class LlmClient {
     return () => this.listeners.delete(cb);
   }
 
-  async load(modelId: string): Promise<void> {
-    if (this._status.kind === 'loading') return;
+  /** 每次載入遞增；舊載入或舊對話的結果若不是最新一代就丟棄，不改狀態。 */
+  private generation = 0;
+  private loading: Promise<void> | null = null;
+  private pendingModel: string | null = null;
+
+  /**
+   * 載入模型。會先釋放舊引擎（終止舊 worker、交還顯示卡記憶體）。
+   * 載入中又要求別的模型時，排到目前這次之後，最後一定是最後要求的那個。
+   */
+  load(modelId: string): Promise<void> {
+    this.pendingModel = modelId;
+    if (this.loading) return this.loading;
+    this.loading = (async () => {
+      while (this.pendingModel) {
+        const id = this.pendingModel;
+        this.pendingModel = null;
+        await this.loadOnce(id);
+      }
+    })().finally(() => {
+      this.loading = null;
+    });
+    return this.loading;
+  }
+
+  private async loadOnce(modelId: string): Promise<void> {
+    const gen = ++this.generation;
+    const old = this.engine;
     this.engine = null;
     this.set({ kind: 'loading', progress: 0, text: '準備中' });
     try {
-      this.engine = await this.factory(modelId, (progress, text) => this.set({ kind: 'loading', progress, text }));
+      await old?.dispose?.();
+    } catch (e) {
+      console.warn('[castle-life] 釋放舊模型失敗', e);
+    }
+    try {
+      const engine = await this.factory(modelId, (progress, text) => {
+        if (gen === this.generation) this.set({ kind: 'loading', progress, text });
+      });
+      this.engine = engine;
       this.set({ kind: 'ready' });
     } catch (e) {
       console.error('[castle-life] AI 模型載入失敗', e);
@@ -63,12 +98,20 @@ export class LlmClient {
   }
 
   async chat(messages: ChatMessage[]): Promise<string> {
-    if (!this.engine || this._status.kind !== 'ready') throw new Error('模型尚未就緒');
+    const engine = this.engine;
+    if (!engine || this._status.kind !== 'ready') throw new Error('模型尚未就緒');
+    const gen = this.generation;
     this.set({ kind: 'generating' });
     try {
-      return await this.engine.chat(messages);
-    } finally {
-      this.set({ kind: 'ready' });
+      const out = await engine.chat(messages);
+      if (gen === this.generation) this.set({ kind: 'ready' });
+      return out;
+    } catch (e) {
+      if (gen === this.generation) {
+        const detail = e instanceof Error ? e.message : String(e);
+        this.set({ kind: 'error', message: `對話模型發生錯誤（${detail.slice(0, 80)}），請按「重試」重新載入。` });
+      }
+      throw e;
     }
   }
 }
@@ -86,9 +129,16 @@ export const REPLY_SCHEMA = JSON.stringify({
 export const webWorkerEngineFactory: EngineFactory = async (modelId, onProgress) => {
   const { CreateWebWorkerMLCEngine } = await import('@mlc-ai/web-llm');
   const worker = new Worker(new URL('./llm.worker.ts', import.meta.url), { type: 'module' });
-  const engine = await CreateWebWorkerMLCEngine(worker, modelId, {
-    initProgressCallback: (r) => onProgress(r.progress, r.text),
-  });
+  let engine: Awaited<ReturnType<typeof CreateWebWorkerMLCEngine>>;
+  try {
+    engine = await CreateWebWorkerMLCEngine(worker, modelId, {
+      initProgressCallback: (r) => onProgress(r.progress, r.text),
+    });
+  } catch (e) {
+    // 載入失敗（例如顯示卡記憶體不足）時終止 worker，否則重試時舊的還占著記憶體
+    worker.terminate();
+    throw e;
+  }
   // 暖機：第一次生成要編譯 GPU 著色器與語法比對器，先跑一次，玩家第一句話就不會等很久
   onProgress(1, '暖機中');
   try {
@@ -110,6 +160,13 @@ export const webWorkerEngineFactory: EngineFactory = async (modelId, onProgress)
         response_format: { type: 'json_object', schema: REPLY_SCHEMA },
       });
       return res.choices[0]?.message?.content ?? '';
+    },
+    async dispose() {
+      try {
+        await engine.unload();
+      } finally {
+        worker.terminate();
+      }
     },
   };
 };

@@ -37,13 +37,6 @@ test('chat 期間為 generating，結束回 ready', async () => {
   expect(c.status.kind).toBe('ready');
 });
 
-test('chat 失敗回 ready 並拋出', async () => {
-  const c = new LlmClient(async () => ({ chat: async () => { throw new Error('boom'); } }));
-  await c.load('m');
-  await expect(c.chat([])).rejects.toThrow('boom');
-  expect(c.status.kind).toBe('ready');
-});
-
 test('未載入就 chat 會拋出', async () => {
   const c = new LlmClient(async () => ({ chat: async () => '' }));
   await expect(c.chat([])).rejects.toThrow();
@@ -52,4 +45,60 @@ test('未載入就 chat 會拋出', async () => {
 test('pickModel 依 shader-f16 選版本', () => {
   expect(pickModel(new Set(['shader-f16']), 'standard')).toBe(MODEL_STANDARD_F16);
   expect(pickModel(new Set(), 'smart')).toBe(MODEL_SMART_F32);
+});
+
+test('重新載入時會先釋放舊引擎（避免舊 worker 占著顯示卡）', async () => {
+  const disposed: string[] = [];
+  const c = new LlmClient(async (id) => ({ chat: async () => '{}', dispose: async () => { disposed.push(id); } }));
+  await c.load('small');
+  await c.load('big');
+  expect(disposed).toEqual(['small']);
+  expect(c.status.kind).toBe('ready');
+});
+
+test('生成中呼叫 load：舊的 chat 結束時不會把狀態改回 ready', async () => {
+  let release!: (v: string) => void;
+  let finishLoad!: () => void;
+  let n = 0;
+  const c = new LlmClient(async () => {
+    n++;
+    if (n === 2) await new Promise<void>((r) => (finishLoad = r));
+    return { chat: () => new Promise<string>((r) => (release = r)) };
+  });
+  await c.load('a');
+  const p = c.chat([]);
+  const l = c.load('b');
+  expect(c.status.kind).toBe('loading');
+  release('x');
+  await p.catch(() => {});
+  expect(c.status.kind).toBe('loading');
+  await vi.waitFor(() => expect(finishLoad).toBeTypeOf('function'));
+  finishLoad();
+  await l;
+  expect(c.status.kind).toBe('ready');
+});
+
+test('載入中再 load 另一個模型，完成後會換成最後要求的模型', async () => {
+  const loaded: string[] = [];
+  let finishFirst!: () => void;
+  const c = new LlmClient(async (id) => {
+    if (id === 'a') await new Promise<void>((r) => (finishFirst = r));
+    loaded.push(id);
+    return { chat: async () => id };
+  });
+  const first = c.load('a');
+  const second = c.load('b');
+  await vi.waitFor(() => expect(finishFirst).toBeTypeOf('function'));
+  finishFirst();
+  await first;
+  await second;
+  expect(loaded).toEqual(['a', 'b']);
+  expect(await c.chat([])).toBe('b');
+});
+
+test('chat 丟例外：狀態變成 error（顯示重試），並往外拋', async () => {
+  const c = new LlmClient(async () => ({ chat: async () => { throw new Error('device lost'); } }));
+  await c.load('m');
+  await expect(c.chat([])).rejects.toThrow('device lost');
+  expect(c.status.kind).toBe('error');
 });

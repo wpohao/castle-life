@@ -21,6 +21,7 @@ export class Game {
   private timer = new THREE.Timer();
   private paused = false;
   private frameHooks: ((dt: number) => void)[] = [];
+  private switchHooks: (() => void)[] = [];
   private outputs = new Map<GameScene, SceneOutput>();
   private throttleEvery = 1;
   private frameCount = 0;
@@ -43,6 +44,7 @@ export class Game {
     this.currentName = name;
     applyShadowQuality(next.scene, this.preset);
     this.resize();
+    for (const hk of this.switchHooks) hk();
     next.enter();
   }
 
@@ -54,6 +56,11 @@ export class Game {
     this.applyPixelRatio();
     if (this.current) applyShadowQuality(this.current.scene, preset);
     this.resize();
+  }
+
+  /** 每次切換場景時呼叫（例如清掉上一個場景沒處理的按鍵）。 */
+  onSceneSwitch(cb: () => void): void {
+    this.switchHooks.push(cb);
   }
 
   /** 每幀在場景 update 之前呼叫（UI、計時等）。 */

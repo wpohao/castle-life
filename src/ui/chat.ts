@@ -40,6 +40,7 @@ function statusText(s: LlmStatus): string | null {
 
 export function openChat(ctx: UiContext, hooks: ChatHooks): void {
   let unsub: (() => void) | null = null;
+  let busy = false;
   ctx.panels.open(
     `與${LADY.name}交談`,
     (body, close) => {
@@ -55,7 +56,6 @@ export function openChat(ctx: UiContext, hooks: ChatHooks): void {
       const giftSel = h('select') as HTMLSelectElement;
       const giftBtn = h('button', { text: '送禮' });
       const proposeBtn = h('button', { text: '💍 求婚' });
-      let busy = false;
 
       const add = (who: 'player' | 'lady' | 'note', text: string) => {
         const line = h('div', { className: `chat-line ${who}` });
@@ -99,12 +99,12 @@ export function openChat(ctx: UiContext, hooks: ChatHooks): void {
         busy = true;
         refresh();
         const thinking = text.trim() ? add('note', `（${LADY.name}正在想該怎麼回答……）`) : null;
-        const res = await talk(ctx.getState(), text, hooks.llm);
+        const res = await talk(() => ctx.getState(), text, hooks.llm);
         thinking?.remove();
         busy = false;
         if (res.kind === 'rejected') {
           if (res.reason === 'daily_limit') add('note', '（艾琳娜：「今天聊了好多呢……我有點累了，明天再來找我好嗎？」）');
-          else if (res.reason === 'llm_unavailable') add('note', '（對話模型還沒準備好，請稍候。）');
+          else if (res.reason === 'llm_unavailable') add('note', hooks.llm.status.kind === 'error' ? '（對話模型出了問題，這句沒有算進今天的次數。請按「重試」。）' : '（對話模型還沒準備好，請稍候。）');
           refresh();
           return;
         }
@@ -160,6 +160,8 @@ export function openChat(ctx: UiContext, hooks: ChatHooks): void {
     },
     {
       className: 'panel-chat',
+      // 她還在想的時候不能關掉面板，避免回覆落空或與其他操作交錯
+      canClose: () => !busy,
       onClose: () => {
         unsub?.();
         hooks.onClose();
