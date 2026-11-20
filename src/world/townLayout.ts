@@ -79,6 +79,23 @@ export function townColliders(): Box[] {
   return [...walls, well, ...TOWN_LAYOUT.buildings.map(buildingBox)];
 }
 
+/** 不長草的地方：建築、城牆、道路、廣場、競技場周邊。 */
+export function grassExclusions(): Box[] {
+  const pad = (b: Box, p: number): Box => ({ minX: b.minX - p, maxX: b.maxX + p, minZ: b.minZ - p, maxZ: b.maxZ + p });
+  const r = TOWN_LAYOUT.plazaRadius;
+  return [
+    ...townColliders().map((b) => pad(b, 0.6)),
+    { minX: -3.5, maxX: 3.5, minZ: -TOWN_LAYOUT.halfSize, maxZ: TOWN_LAYOUT.halfSize },
+    { minX: -22.5, maxX: 22.5, minZ: -6, maxZ: 0 },
+    { minX: -r, maxX: r, minZ: -r, maxZ: r },
+    { minX: 4, maxX: 15, minZ: 6, maxZ: 28 },
+    ...TOWN_LAYOUT.buildings.map((b) => {
+      const d = doorPoint(b, 0);
+      return { minX: d.x - 3, maxX: d.x + 3, minZ: d.z - 3, maxZ: d.z + 3 };
+    }),
+  ];
+}
+
 export function townZones(): Zone[] {
   return TOWN_LAYOUT.buildings.map((b) => {
     const p = doorPoint(b);

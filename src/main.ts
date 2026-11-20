@@ -29,6 +29,22 @@ import { openChat } from './ui/chat';
 import { h } from './ui/dom';
 import { createWeddingScene } from './world/wedding';
 import { LADY } from './config/romance';
+import { createGrass } from './world/grass';
+import { scatterGrass } from './world/grassScatter';
+import { grassExclusions, TOWN_LAYOUT } from './world/townLayout';
+
+const GRASS_COUNT = 40000;
+
+function mulberry32(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 async function boot(): Promise<void> {
   const ui = document.getElementById('ui')!;
@@ -166,6 +182,17 @@ async function boot(): Promise<void> {
   const game = new Game(renderer);
   const town = createTownScene({ input, hud, getState: () => state, onInteract });
   game.registerScene('town', town);
+  // Compute shader 草地（城牆內、避開道路與建築）
+  const grassRng = mulberry32(2026);
+  const H = TOWN_LAYOUT.halfSize - 1;
+  const grass = createGrass(renderer, scatterGrass({ minX: -H, maxX: H, minZ: -H, maxZ: H }, grassExclusions(), GRASS_COUNT, grassRng), grassRng);
+  town.scene.add(grass.mesh);
+  let grassTime = 0;
+  town.afterUpdate.push((dt) => {
+    grassTime += dt;
+    grass.update(grassTime, town.playerPosition());
+  });
+
   const arena = createArenaScene({ input, hud, ui });
   game.registerScene('arena', arena);
   const manor = createManorScene({ input, hud, getState: () => state, onTalk: talkToLady, onLeave: leaveManor });
