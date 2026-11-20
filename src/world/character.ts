@@ -16,6 +16,8 @@ export class AnimatedCharacter {
   private actions = new Map<string, THREE.AnimationAction>();
   private current: THREE.AnimationAction | null = null;
   currentName: string | null = null;
+  /** 最近一次 loop() 的動畫；once() 播完（未 clampEnd）會自動回到它 */
+  private lastLoop: { name: string; timeScale: number } | null = null;
 
   private constructor(
     readonly root: THREE.Group,
@@ -32,6 +34,13 @@ export class AnimatedCharacter {
       if (!prev || (!prev.name.includes('|') && c.name.includes('|'))) chosen.set(short, c);
     }
     for (const [short, c] of chosen) this.actions.set(short, this.mixer.clipAction(c));
+    this.mixer.addEventListener('finished', (e) => {
+      const a = (e as unknown as { action: THREE.AnimationAction }).action;
+      if (a === this.current && !a.clampWhenFinished && this.lastLoop) {
+        this.current = null;
+        this.loop(this.lastLoop.name, 0.15, this.lastLoop.timeScale);
+      }
+    });
   }
 
   static async create(key: AssetKey): Promise<AnimatedCharacter> {
@@ -47,6 +56,7 @@ export class AnimatedCharacter {
   loop(name: AnimName | string, fade = 0.2, timeScale = 1): void {
     const a = this.actions.get(name);
     if (!a) return;
+    this.lastLoop = { name, timeScale };
     a.timeScale = timeScale;
     if (this.current === a) return;
     a.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(fade).play();

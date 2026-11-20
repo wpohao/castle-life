@@ -27,6 +27,8 @@ import { createManorScene } from './world/manorScene';
 import { LlmClient, pickModel, webWorkerEngineFactory, type ModelTier } from './romance/llmClient';
 import { openChat } from './ui/chat';
 import { h } from './ui/dom';
+import { createWeddingScene } from './world/wedding';
+import { LADY } from './config/romance';
 
 async function boot(): Promise<void> {
   const ui = document.getElementById('ui')!;
@@ -119,13 +121,23 @@ async function boot(): Promise<void> {
       llm,
       retryLoad: loadModel,
       onLadySpeak: (k) => manor.ladyReact(k),
-      onProposalAccepted: () => onProposalAccepted(),
+      onProposalAccepted: () => void onProposalAccepted(),
       onClose: () => (manor.chatMode = false),
     });
   };
 
-  const onProposalAccepted = () => {
-    hud.toast('她答應了！');
+  const onProposalAccepted = async () => {
+    manor.chatMode = false;
+    input.setEnabled(false);
+    void autosave.flush();
+    await wedding.start(state.playerName, LADY.name, () => {
+      game.switchScene('town');
+      town.player.teleport(0, -3, 0);
+      town.follow.yaw = 0;
+      input.setEnabled(true);
+      hud.toast(`恭喜！你和${LADY.name}結婚了。她還住在城主府，隨時可以去找她聊天。`);
+    });
+    game.switchScene('wedding');
   };
 
   const enterArena = async () => {
@@ -158,6 +170,8 @@ async function boot(): Promise<void> {
   game.registerScene('arena', arena);
   const manor = createManorScene({ input, hud, getState: () => state, onTalk: talkToLady, onLeave: leaveManor });
   game.registerScene('manor', manor);
+  const wedding = createWeddingScene(town.scene, hud, ui);
+  game.registerScene('wedding', wedding);
   await Promise.all([applySceneTextures(renderer.getMaxAnisotropy?.() ?? 8), town.ready]);
   game.switchScene('town');
   refreshHud();
