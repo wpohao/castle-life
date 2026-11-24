@@ -20,7 +20,7 @@ export interface ManorContext {
 
 export interface ManorScene extends GameScene {
   ready: Promise<void>;
-  /** 聊天時鏡頭對準艾琳娜 */
+  /** 與艾琳娜見面時鏡頭對準她 */
   chatMode: boolean;
   ladyReact(kind: 'talk' | 'happy' | 'sad'): void;
   player: PlayerController;

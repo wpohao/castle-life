@@ -23,8 +23,6 @@ export class Game {
   private frameHooks: ((dt: number) => void)[] = [];
   private switchHooks: (() => void)[] = [];
   private outputs = new Map<GameScene, SceneOutput>();
-  private throttleEvery = 1;
-  private frameCount = 0;
 
   constructor(readonly renderer: THREE.WebGPURenderer, private preset: QualityPreset) {
     window.addEventListener('resize', () => this.resize());
@@ -76,11 +74,6 @@ export class Game {
     return this.paused;
   }
 
-  /** 節流時只每 N 幀畫一次（AI 生成時把顯示卡讓出來）。 */
-  setRenderThrottle(everyN: number): void {
-    this.throttleEvery = Math.max(1, Math.floor(everyN));
-  }
-
   start(): void {
     this.timer.connect(document);
     this.renderer.setAnimationLoop(() => {
@@ -89,8 +82,7 @@ export class Game {
       if (!this.current) return;
       for (const h of this.frameHooks) h(dt);
       if (!this.paused) this.current.update(dt);
-      this.frameCount++;
-      if (this.frameCount % this.throttleEvery === 0) this.outputFor(this.current).render();
+      this.outputFor(this.current).render();
     });
   }
 

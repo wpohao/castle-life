@@ -3,11 +3,6 @@ import { START_GOLD, STARTER_WEAPON_ID } from '../config/items';
 export const SAVE_VERSION = 1;
 export const PLAYER_NAME_MAX = 12;
 
-export interface MemoryLine {
-  role: 'player' | 'lady';
-  text: string;
-}
-
 export interface GameState {
   version: 1;
   playerName: string;
@@ -21,11 +16,8 @@ export interface GameState {
   arena: { nextOpponent: number; champion: boolean };
   romance: {
     affection: number;
-    chatsToday: number;
     giftGivenToday: boolean;
-    topicsToday: string[];
     married: boolean;
-    memory: MemoryLine[];
   };
 }
 
@@ -41,7 +33,7 @@ export function createNewState(playerName: string): GameState {
     activeHorse: null,
     gifts: {},
     arena: { nextOpponent: 0, champion: false },
-    romance: { affection: 0, chatsToday: 0, giftGivenToday: false, topicsToday: [], married: false, memory: [] },
+    romance: { affection: 0, giftGivenToday: false, married: false },
   };
 }
 

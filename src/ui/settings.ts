@@ -6,7 +6,7 @@ export interface SettingsActions {
   /** 回傳錯誤訊息；成功回傳 null */
   importSave(file: File): Promise<string | null>;
   resetGame(): Promise<void>;
-  /** 額外的設定區塊（畫質、AI 模型等，由後續功能加入） */
+  /** 額外的設定區塊（例如畫質） */
   extraSections?: ((body: HTMLElement) => void)[];
 }
 

@@ -1,6 +1,6 @@
 import { CHAMPION_INDEX } from '../config/arena';
 import { getGift, getHorse, getWeapon } from '../config/items';
-import { SAVE_VERSION, type GameState, type MemoryLine } from './state';
+import { SAVE_VERSION, type GameState } from './state';
 
 export function serialize(s: GameState): string {
   return JSON.stringify(s);
@@ -64,15 +64,8 @@ function validate(raw: unknown): GameState {
   const r = raw.romance;
   check(isObj(r), '好感資料無效');
   check(isInt(r.affection, 0, 100), '好感度無效');
-  check(isInt(r.chatsToday, 0), '今日聊天次數無效');
   check(typeof r.giftGivenToday === 'boolean', '送禮狀態無效');
-  check(isStrArr(r.topicsToday), '今日話題無效');
   check(typeof r.married === 'boolean', '婚姻狀態無效');
-  check(
-    Array.isArray(r.memory) &&
-      r.memory.every((m: unknown) => isObj(m) && (m.role === 'player' || m.role === 'lady') && typeof m.text === 'string'),
-    '對話記憶無效',
-  );
 
   return {
     version: SAVE_VERSION,
@@ -87,11 +80,8 @@ function validate(raw: unknown): GameState {
     arena: { nextOpponent: arena.nextOpponent, champion: arena.champion },
     romance: {
       affection: r.affection,
-      chatsToday: r.chatsToday,
       giftGivenToday: r.giftGivenToday,
-      topicsToday: [...r.topicsToday],
       married: r.married,
-      memory: (r.memory as MemoryLine[]).map((m) => ({ role: m.role, text: m.text })),
     },
   };
 }

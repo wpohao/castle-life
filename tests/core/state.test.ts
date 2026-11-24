@@ -16,11 +16,8 @@ test('新遊戲初始值', () => {
   });
   expect(s.romance).toEqual({
     affection: 0,
-    chatsToday: 0,
     giftGivenToday: false,
-    topicsToday: [],
     married: false,
-    memory: [],
   });
 });
 

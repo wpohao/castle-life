@@ -1,8 +1,5 @@
 import { getGift, RING_GIFT_ID } from '../config/items';
-import {
-  DAILY_CHAT_LIMIT, DISLIKE_TOPIC_PENALTY, GIFT_DELTA, LADY, LIKE_TOPIC_BONUS, MEMORY_LIMIT, MESSAGE_DELTA_MAX,
-  MESSAGE_DELTA_MIN, NUDGE_LIMIT, PROPOSAL_REJECT_PENALTY, STAGES, type Persona,
-} from '../config/romance';
+import { GIFT_DELTA, LADY, PROPOSAL_REJECT_PENALTY, STAGES, type Persona } from '../config/romance';
 import type { GameState } from '../core/state';
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -13,35 +10,10 @@ export function getStage(affection: number): (typeof STAGES)[number] {
   return s;
 }
 
-export function scoreMessage(text: string, p: Persona, topicsToday: string[]): { delta: number; matchedLikes: string[]; matchedDislikes: string[] } {
-  const matchedLikes = p.likes.filter((t) => !topicsToday.includes(t.id) && t.keywords.some((k) => text.includes(k))).map((t) => t.id);
-  const matchedDislikes = p.dislikes.filter((t) => t.keywords.some((k) => text.includes(k))).map((t) => t.id);
-  return { delta: matchedLikes.length * LIKE_TOPIC_BONUS + matchedDislikes.length * DISLIKE_TOPIC_PENALTY, matchedLikes, matchedDislikes };
-}
-
 function withAffection(s: GameState, change: number): { state: GameState; delta: number } {
   const before = s.romance.affection;
   const after = clamp(before + change, 0, 100);
   return { state: { ...s, romance: { ...s.romance, affection: after } }, delta: after - before };
-}
-
-/** 套用一回合聊天：規則計分＋AI 微調（±1），單句總和 ±4。delta 為實際變化量。 */
-export function applyChat(s: GameState, playerText: string, ladyReply: string, nudge: number): { state: GameState; delta: number } | { error: 'daily_limit' } {
-  if (!s.romance.married && s.romance.chatsToday >= DAILY_CHAT_LIMIT) return { error: 'daily_limit' };
-  const rule = scoreMessage(playerText, LADY, s.romance.topicsToday);
-  const n = clamp(Math.round(Number.isFinite(nudge) ? nudge : 0), -NUDGE_LIMIT, NUDGE_LIMIT);
-  const total = clamp(rule.delta + n, MESSAGE_DELTA_MIN, MESSAGE_DELTA_MAX);
-  const memory = [...s.romance.memory, { role: 'player' as const, text: playerText }, { role: 'lady' as const, text: ladyReply }].slice(-MEMORY_LIMIT);
-  const next: GameState = {
-    ...s,
-    romance: {
-      ...s.romance,
-      chatsToday: s.romance.chatsToday + 1,
-      topicsToday: [...s.romance.topicsToday, ...rule.matchedLikes],
-      memory,
-    },
-  };
-  return withAffection(next, total);
 }
 
 export type GiftError = 'not_owned' | 'already_gifted_today' | 'ring_is_for_proposal';

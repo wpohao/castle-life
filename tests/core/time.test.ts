@@ -3,9 +3,9 @@ import { restUntilNextDay } from '../../src/core/time';
 
 test('休息到隔天重置每日限制', () => {
   const s = createNewState('a');
-  s.romance = { ...s.romance, chatsToday: 8, giftGivenToday: true, topicsToday: ['flower'], affection: 40 };
+  s.romance = { ...s.romance, giftGivenToday: true, affection: 40 };
   const n = restUntilNextDay(s);
   expect(n.day).toBe(2);
-  expect(n.romance).toMatchObject({ chatsToday: 0, giftGivenToday: false, topicsToday: [], affection: 40 });
+  expect(n.romance).toMatchObject({ giftGivenToday: false, affection: 40 });
   expect(s.day).toBe(1);
 });

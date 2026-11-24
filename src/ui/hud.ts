@@ -3,7 +3,6 @@ export interface Hud {
   setGold(n: number): void;
   setDay(n: number): void;
   setPrompt(text: string | null): void;
-  setStatus(text: string | null): void;
   toast(text: string): void;
   setVisible(v: boolean): void;
 }
@@ -13,8 +12,7 @@ export function createHud(root: HTMLElement): Hud {
   const stats = el('div', 'hud-stats');
   const day = el('span');
   const gold = el('span');
-  const status = el('span');
-  stats.append(day, gold, status);
+  stats.append(day, gold);
   const prompt = el('div', 'hud-prompt');
   prompt.style.display = 'none';
   const toastEl = el('div', 'hud-toast');
@@ -31,7 +29,6 @@ export function createHud(root: HTMLElement): Hud {
       prompt.style.display = t ? '' : 'none';
       prompt.textContent = t ?? '';
     },
-    setStatus: (t) => { status.textContent = t ?? ''; },
     toast: (t) => {
       toastEl.textContent = t;
       toastEl.style.opacity = '1';
